@@ -87,6 +87,6 @@ func init() {
 	serveCmd.PersistentFlags().IntVar(&cfg.MaxConnections, "max-conn", 200, "max connections")
 	serveCmd.PersistentFlags().BoolVar(&cfg.Seed, "seed", false, "to seed or not to seed")
 	serveCmd.PersistentFlags().BoolVar(&cfg.TCP, "tcp", true, "to tcp or not to tcp")
-	serveCmd.PersistentFlags().StringVarP(&play, "player", "p", "vlc", "Open the stream with a video player ("+player.JoinPlayerNames()+")")
+	serveCmd.PersistentFlags().StringVarP(&play, "player", "p", "", "Open the stream with a video player ("+player.JoinPlayerNames()+")")
 	rootCmd.AddCommand(serveCmd)
 }

@@ -2,11 +2,9 @@ package client
 
 import (
 	"bufio"
-	"compress/gzip"
 	"fmt"
+	"github.com/autom8ter/goflix/download"
 	"github.com/autom8ter/goflix/reader"
-	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -15,13 +13,10 @@ import (
 	"time"
 
 	"github.com/anacrolix/torrent"
-	"github.com/anacrolix/torrent/iplist"
 	"github.com/dustin/go-humanize"
 )
 
 const clearScreen = "\033[H\033[2J"
-
-const torrentBlockListURL = "http://john.bitsurge.net/public/biglist.p2p.gz"
 
 var isHTTP = regexp.MustCompile(`^https?:\/\/`)
 
@@ -74,7 +69,7 @@ func New(cfg *ClientConfig) (*Client, error) {
 		err    error
 	)
 	client.Config = cfg
-	blocklist := getBlocklist()
+	blocklist := download.GetBlocklist()
 	torrentConfig := torrent.NewDefaultClientConfig()
 	torrentConfig.DataDir = os.TempDir()
 	torrentConfig.NoUpload = !cfg.Seed
@@ -103,7 +98,7 @@ func New(cfg *ClientConfig) (*Client, error) {
 
 		// If it's online, we try downloading the file.
 		if isHTTP.MatchString(cfg.TorrentPath) {
-			if cfg.TorrentPath, err = downloadFile(cfg.TorrentPath); err != nil {
+			if cfg.TorrentPath, err = download.DownloadFile(cfg.TorrentPath); err != nil {
 				return client, ClientError{Type: "downloading torrent file", Origin: err}
 			}
 		}
@@ -130,58 +125,6 @@ func New(cfg *ClientConfig) (*Client, error) {
 	}()
 
 	return client, err
-}
-
-// Download and add the blocklist.
-func getBlocklist() iplist.Ranger {
-	var err error
-	blocklistPath := os.TempDir() + "/go-peerflix-blocklist.gz"
-
-	if _, err = os.Stat(blocklistPath); os.IsNotExist(err) {
-		err = downloadBlockList(blocklistPath)
-	}
-
-	if err != nil {
-		log.Printf("Error downloading blocklist: %s", err)
-		return nil
-	}
-
-	// Load blocklist.
-	// #nosec
-	// We trust our temporary directory as we just wrote the file there ourselves.
-	blocklistReader, err := os.Open(blocklistPath)
-	if err != nil {
-		log.Printf("Error opening blocklist: %s", err)
-		return nil
-	}
-
-	// Extract file.
-	gzipReader, err := gzip.NewReader(blocklistReader)
-	if err != nil {
-		log.Printf("Error extracting blocklist: %s", err)
-		return nil
-	}
-
-	// Read as iplist.
-	blocklist, err := iplist.NewFromReader(gzipReader)
-	if err != nil {
-		log.Printf("Error reading blocklist: %s", err)
-		return nil
-	}
-
-	log.Printf("Loading blocklist.\nFound %d ranges\n", blocklist.NumRanges())
-	return blocklist
-}
-
-func downloadBlockList(blocklistPath string) (err error) {
-	log.Printf("Downloading blocklist")
-	fileName, err := downloadFile(torrentBlockListURL)
-	if err != nil {
-		log.Printf("Error downloading blocklist: %s\n", err)
-		return
-	}
-
-	return os.Rename(fileName, blocklistPath)
 }
 
 // Close cleans up the connections.
@@ -302,34 +245,4 @@ func (c *Client) percentage() float64 {
 	}
 
 	return float64(c.Torrent.BytesCompleted()) / float64(info.TotalLength()) * 100
-}
-
-func downloadFile(URL string) (fileName string, err error) {
-	var file *os.File
-	if file, err = ioutil.TempFile(os.TempDir(), "go-peerflix"); err != nil {
-		return
-	}
-
-	defer func() {
-		if ferr := file.Close(); ferr != nil {
-			log.Printf("Error closing torrent file: %s", ferr)
-		}
-	}()
-
-	// #nosec
-	// We are downloading the url the user passed to us, we trust it is a torrent file.
-	response, err := http.Get(URL)
-	if err != nil {
-		return
-	}
-
-	defer func() {
-		if ferr := response.Body.Close(); ferr != nil {
-			log.Printf("Error closing torrent file: %s", ferr)
-		}
-	}()
-
-	_, err = io.Copy(file, response.Body)
-
-	return file.Name(), err
 }
