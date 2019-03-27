@@ -198,22 +198,24 @@ func (c *Client) ReadyForPlayback() bool {
 }
 
 // GetFile is an http handler to serve the biggest file managed by the client.
-func (c *Client) GetFile(w http.ResponseWriter, r *http.Request) {
-	target := c.GetLargestFile()
-	entry, err := reader.NewFileReader(target)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	defer func() {
-		if err := entry.Close(); err != nil {
-			log.Printf("Error closing file reader: %s\n", err)
+func (c *Client) HandlerFunc() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		target := c.GetLargestFile()
+		entry, err := reader.NewFileReader(target)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-	}()
 
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+c.Torrent.Info().Name+"\"")
-	http.ServeContent(w, r, target.DisplayPath(), time.Now(), entry)
+		defer func() {
+			if err := entry.Close(); err != nil {
+				log.Printf("Error closing file reader: %s\n", err)
+			}
+		}()
+
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+c.Torrent.Info().Name+"\"")
+		http.ServeContent(w, r, target.DisplayPath(), time.Now(), entry)
+	}
 }
 
 func (c *Client) Percentage() float64 {

@@ -45,7 +45,7 @@ var serveCmd = &cobra.Command{
 		}
 		// Http handler.
 		go func() {
-			http.HandleFunc("/", client.GetFile)
+			http.HandleFunc("/", client.HandlerFunc())
 			log.Fatal(http.ListenAndServe(":"+strconv.Itoa(cfg.Port), nil))
 		}()
 		if play != "" {
