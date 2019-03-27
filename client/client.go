@@ -116,7 +116,7 @@ func New(cfg *ClientConfig) (*Client, error) {
 		t.DownloadAll()
 
 		// Prioritize first 5% of the file.
-		largestFile := client.getLargestFile()
+		largestFile := client.GetLargestFile()
 		firstPieceIndex := largestFile.Offset() * int64(t.NumPieces()) / t.Length()
 		endPieceIndex := (largestFile.Offset() + largestFile.Length()) * int64(t.NumPieces()) / t.Length()
 		for idx := firstPieceIndex; idx <= endPieceIndex*5/100; idx++ {
@@ -152,7 +152,7 @@ func (c *Client) Render() {
 	uploadProgress := (&bytesWrittenData).Int64() - c.Uploaded
 	uploadSpeed := humanize.Bytes(uint64(uploadProgress)) + "/s"
 	c.Uploaded = uploadProgress
-	percentage := c.percentage()
+	percentage := c.Percentage()
 	totalLength := t.Info().TotalLength()
 
 	output := bufio.NewWriter(os.Stdout)
@@ -176,7 +176,8 @@ func (c *Client) Render() {
 	output.Flush()
 }
 
-func (c *Client) getLargestFile() *torrent.File {
+//
+func (c *Client) GetLargestFile() *torrent.File {
 	var target *torrent.File
 	var maxSize int64
 
@@ -188,6 +189,41 @@ func (c *Client) getLargestFile() *torrent.File {
 	}
 
 	return target
+}
+
+// ReadyForPlayback checks if the torrent is ready for playback or not.
+// We wait until 5% of the torrent to start playing.
+func (c *Client) ReadyForPlayback() bool {
+	return c.Percentage() > 5
+}
+
+// GetFile is an http handler to serve the biggest file managed by the client.
+func (c *Client) GetFile(w http.ResponseWriter, r *http.Request) {
+	target := c.GetLargestFile()
+	entry, err := reader.NewFileReader(target)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	defer func() {
+		if err := entry.Close(); err != nil {
+			log.Printf("Error closing file reader: %s\n", err)
+		}
+	}()
+
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+c.Torrent.Info().Name+"\"")
+	http.ServeContent(w, r, target.DisplayPath(), time.Now(), entry)
+}
+
+func (c *Client) Percentage() float64 {
+	info := c.Torrent.Info()
+
+	if info == nil {
+		return 0
+	}
+
+	return float64(c.Torrent.BytesCompleted()) / float64(info.TotalLength()) * 100
 }
 
 /*
@@ -211,38 +247,3 @@ func (c Client) RenderPieces() (output string) {
 	return
 }
 */
-
-// ReadyForPlayback checks if the torrent is ready for playback or not.
-// We wait until 5% of the torrent to start playing.
-func (c *Client) ReadyForPlayback() bool {
-	return c.percentage() > 5
-}
-
-// GetFile is an http handler to serve the biggest file managed by the client.
-func (c *Client) GetFile(w http.ResponseWriter, r *http.Request) {
-	target := c.getLargestFile()
-	entry, err := reader.NewFileReader(target)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	defer func() {
-		if err := entry.Close(); err != nil {
-			log.Printf("Error closing file reader: %s\n", err)
-		}
-	}()
-
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+c.Torrent.Info().Name+"\"")
-	http.ServeContent(w, r, target.DisplayPath(), time.Now(), entry)
-}
-
-func (c *Client) percentage() float64 {
-	info := c.Torrent.Info()
-
-	if info == nil {
-		return 0
-	}
-
-	return float64(c.Torrent.BytesCompleted()) / float64(info.TotalLength()) * 100
-}
