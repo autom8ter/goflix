@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package goflix
 
-import "github.com/autom8ter/goflix/cmd"
+import "github.com/autom8ter/goflix/cmd/goflix/cmd"
 
 func main() {
 	cmd.Execute()

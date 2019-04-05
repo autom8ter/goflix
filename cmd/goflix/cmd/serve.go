@@ -16,7 +16,7 @@ package cmd
 
 import (
 	"errors"
-	"github.com/autom8ter/goflix/client"
+	"github.com/autom8ter/goflix"
 	"github.com/autom8ter/goflix/player"
 	"github.com/spf13/cobra"
 	"log"
@@ -28,7 +28,7 @@ import (
 	"time"
 )
 
-var cfg = &client.ClientConfig{}
+var cfg = &goflix.ClientConfig{}
 var play string
 
 // serveCmd represents the serve command
@@ -39,7 +39,7 @@ var serveCmd = &cobra.Command{
 		if cfg.TorrentPath == "" {
 			log.Fatalln(rootCmd.UsageString(), errors.New("please provide a valid torrent --torrent | -t"))
 		}
-		client, err := client.New(cfg)
+		client, err := goflix.New(cfg)
 		if err != nil {
 			log.Fatalln(err.Error())
 		}

@@ -1,10 +1,11 @@
-package client
+package goflix
 
 import (
 	"bufio"
 	"fmt"
 	"github.com/autom8ter/goflix/download"
 	"github.com/autom8ter/goflix/reader"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -20,7 +21,7 @@ const clearScreen = "\033[H\033[2J"
 
 var isHTTP = regexp.MustCompile(`^https?:\/\/`)
 
-// ClientError formats errors coming from the client.
+// ClientError formats errors coming from the GoFlix.
 type ClientError struct {
 	Type   string
 	Origin error
@@ -30,8 +31,8 @@ func (clientError ClientError) Error() string {
 	return fmt.Sprintf("Error %s: %s\n", clientError.Type, clientError.Origin)
 }
 
-// Client manages the torrent downloading.
-type Client struct {
+// GoFlix manages the torrent downloading.
+type GoFlix struct {
 	Client   *torrent.Client
 	Torrent  *torrent.Torrent
 	Progress int64
@@ -39,7 +40,7 @@ type Client struct {
 	Config   *ClientConfig
 }
 
-// ClientConfig specifies the behaviour of a client.
+// ClientConfig specifies the behaviour of a GoFlix.
 type ClientConfig struct {
 	TorrentPath    string
 	Port           int
@@ -59,16 +60,16 @@ func DefaultClientConfig() ClientConfig {
 	}
 }
 
-// NewClient creates a new torrent client based on a magnet or a torrent file.
+// NewClient creates a new torrent GoFlix based on a magnet or a torrent file.
 // If the torrent file is on http, we try downloading it.
-func New(cfg *ClientConfig) (*Client, error) {
+func New(cfg *ClientConfig) (*GoFlix, error) {
 	var (
-		client = &Client{}
+		GoFlix = &GoFlix{}
 		t      *torrent.Torrent
 		c      *torrent.Client
 		err    error
 	)
-	client.Config = cfg
+	GoFlix.Config = cfg
 	blocklist := download.GetBlocklist()
 	torrentConfig := torrent.NewDefaultClientConfig()
 	torrentConfig.DataDir = os.TempDir()
@@ -77,21 +78,21 @@ func New(cfg *ClientConfig) (*Client, error) {
 	torrentConfig.ListenPort = cfg.TorrentPort
 	torrentConfig.IPBlocklist = blocklist
 
-	// Create client.
+	// Create GoFlix.
 	c, err = torrent.NewClient(torrentConfig)
 
 	if err != nil {
-		return client, ClientError{Type: "creating torrent client", Origin: err}
+		return GoFlix, ClientError{Type: "creating torrent GoFlix", Origin: err}
 	}
 
-	client.Client = c
+	GoFlix.Client = c
 
 	// Add torrent.
 
 	// Add as magnet url.
 	if strings.HasPrefix(cfg.TorrentPath, "magnet:") {
 		if t, err = c.AddMagnet(cfg.TorrentPath); err != nil {
-			return client, ClientError{Type: "adding torrent", Origin: err}
+			return GoFlix, ClientError{Type: "adding torrent", Origin: err}
 		}
 	} else {
 		// Otherwise add as a torrent file.
@@ -99,24 +100,24 @@ func New(cfg *ClientConfig) (*Client, error) {
 		// If it's online, we try downloading the file.
 		if isHTTP.MatchString(cfg.TorrentPath) {
 			if cfg.TorrentPath, err = download.DownloadFile(cfg.TorrentPath); err != nil {
-				return client, ClientError{Type: "downloading torrent file", Origin: err}
+				return GoFlix, ClientError{Type: "downloading torrent file", Origin: err}
 			}
 		}
 
 		if t, err = c.AddTorrentFromFile(cfg.TorrentPath); err != nil {
-			return client, ClientError{Type: "adding torrent to the client", Origin: err}
+			return GoFlix, ClientError{Type: "adding torrent to the GoFlix", Origin: err}
 		}
 	}
 
-	client.Torrent = t
-	client.Torrent.SetMaxEstablishedConns(cfg.MaxConnections)
+	GoFlix.Torrent = t
+	GoFlix.Torrent.SetMaxEstablishedConns(cfg.MaxConnections)
 
 	go func() {
 		<-t.GotInfo()
 		t.DownloadAll()
 
 		// Prioritize first 5% of the file.
-		largestFile := client.GetLargestFile()
+		largestFile := GoFlix.GetLargestFile()
 		firstPieceIndex := largestFile.Offset() * int64(t.NumPieces()) / t.Length()
 		endPieceIndex := (largestFile.Offset() + largestFile.Length()) * int64(t.NumPieces()) / t.Length()
 		for idx := firstPieceIndex; idx <= endPieceIndex*5/100; idx++ {
@@ -124,17 +125,17 @@ func New(cfg *ClientConfig) (*Client, error) {
 		}
 	}()
 
-	return client, err
+	return GoFlix, err
 }
 
 // Close cleans up the connections.
-func (c *Client) Close() {
+func (c *GoFlix) Close() {
 	c.Torrent.Drop()
 	c.Client.Close()
 }
 
-// Render outputs the command line interface for the client.
-func (c *Client) Render() {
+// Render outputs the command line interface for the GoFlix.
+func (c *GoFlix) Render() {
 	t := c.Torrent
 
 	if t.Info() == nil {
@@ -177,7 +178,7 @@ func (c *Client) Render() {
 }
 
 //
-func (c *Client) GetLargestFile() *torrent.File {
+func (c *GoFlix) GetLargestFile() *torrent.File {
 	var target *torrent.File
 	var maxSize int64
 
@@ -193,12 +194,12 @@ func (c *Client) GetLargestFile() *torrent.File {
 
 // ReadyForPlayback checks if the torrent is ready for playback or not.
 // We wait until 5% of the torrent to start playing.
-func (c *Client) ReadyForPlayback() bool {
+func (c *GoFlix) ReadyForPlayback() bool {
 	return c.Percentage() > 5
 }
 
-// GetFile is an http handler to serve the biggest file managed by the client.
-func (c *Client) HandlerFunc() http.HandlerFunc {
+// GetFile is an http handler to serve the biggest file managed by the GoFlix.
+func (c *GoFlix) HandlerFunc() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		target := c.GetLargestFile()
 		entry, err := reader.NewFileReader(target)
@@ -218,7 +219,16 @@ func (c *Client) HandlerFunc() http.HandlerFunc {
 	}
 }
 
-func (c *Client) Percentage() float64 {
+func (c *GoFlix) FileReader() (io.ReadSeeker, error) {
+	target := c.GetLargestFile()
+	entry, err := reader.NewFileReader(target)
+	if err != nil {
+		return nil, err
+	}
+	return entry, nil
+}
+
+func (c *GoFlix) Percentage() float64 {
 	info := c.Torrent.Info()
 
 	if info == nil {
@@ -229,7 +239,7 @@ func (c *Client) Percentage() float64 {
 }
 
 /*
-func (c Client) RenderPieces() (output string) {
+func (c GoFlix) RenderPieces() (output string) {
 	pieces := c.Torrent.PieceStateRuns()
 	for i := range pieces {
 		piece := pieces[i]
